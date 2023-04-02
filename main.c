@@ -17,7 +17,7 @@
   ******************************************************************************
   ******************************************************************************
   ******************************************************************************
-  * This code was modified for use in ENCM 515 in 2022 and 2023
+  * This code was modified for use in ENCM 515 in 2022
   * B. Tan
   * Note: DO NOT REGENERATE CODE/MODIFY THE IOC
   */
@@ -26,13 +26,11 @@
 #include "main.h"
 
 /* Private typedef -----------------------------------------------------------*/
-
 /* Private define ------------------------------------------------------------*/
-#define BUFFER_SIZE 100
-#define NUMBER_OF_TAPS 1000
-#define AUDIO_SIZE (0x2BEEC - 44)/4
-#define DELAY_NUMBER 1
-//#define FUNCTIONAL_TEST
+#define NUMBER_OF_TAPS	220
+#define BUFFER_SIZE 32
+#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
+
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 
@@ -50,48 +48,40 @@ uint32_t uwPrescalerValue = 0;
 uint32_t uwCapturedValue = 0;
 
 volatile int32_t *raw_audio = 0x802002C; // ignore first 44 bytes of header
+int16_t history_l[NUMBER_OF_TAPS];
+int16_t history_r[NUMBER_OF_TAPS];
+volatile int overflow_count = 0;
+volatile int underflow_count = 0;
+
+/* 256 */
+//int16_t filter_coeffs[NUMBER_OF_TAPS] = {-3, -8, -8, -12, -13, -13, -12, -9, -4, 1, 6, 10, 11, 9, 5, 0, -6, -11, -13, -13, -9, -2, 6, 13, 17, 17, 13, 5, -5, -14, -21, -23, -19, -10, 2, 15, 25, 30, 27, 17, 2, -15, -29, -37, -36, -26, -8, 13, 33, 45, 47, 37, 17, -9, -35, -53, -59, -50, -28, 3, 36, 61, 73, 66, 43, 6, -34, -69, -88, -86, -61, -20, 30, 75, 104, 108, 85, 38, -22, -80, -122, -135, -114, -63, 9, 83, 142, 167, 152, 96, 11, -83, -163, -207, -200, -142, -41, 78, 187, 257, 266, 206, 87, -66, -217, -327, -362, -306, -163, 41, 259, 436, 522, 481, 303, 14, -331, -654, -866, -886, -661, -174, 543, 1416, 2336, 3176, 3818, 4164, 4164, 3818, 3176, 2336, 1416, 543, -174, -661, -886, -866, -654, -331, 14, 303, 481, 522, 436, 259, 41, -163, -306, -362, -327, -217, -66, 87, 206, 266, 257, 187, 78, -41, -142, -200, -207, -163, -83, 11, 96, 152, 167, 142, 83, 9, -63, -114, -135, -122, -80, -22, 38, 85, 108, 104, 75, 30, -20, -61, -86, -88, -69, -34, 6, 43, 66, 73, 61, 36, 3, -28, -50, -59, -53, -35, -9, 17, 37, 47, 45, 33, 13, -8, -26, -36, -37, -29, -15, 2, 17, 27, 30, 25, 15, 2, -10, -19, -23, -21, -14, -5, 5, 13, 17, 17, 13, 6, -2, -9, -13, -13, -11, -6, 0, 5, 9, 11, 10, 6, 1, -4, -9, -12, -13, -13, -12, -8, -8, -3};
+
+/* 220 */
+int16_t filter_coeffs[NUMBER_OF_TAPS] = {0, 14, 15, 21, 26, 28, 27, 23, 15, 5, -6, -15, -20, -21, -16, -7, 4, 15, 23, 26, 22, 12, -2, -16, -27, -33, -30, -20, -3, 15, 31, 41, 41, 30, 11, -13, -35, -50, -53, -43, -21, 7, 37, 59, 67, 59, 36, 1, -37, -67, -83, -79, -54, -13, 33, 75, 101, 102, 77, 31, -27, -82, -120, -130, -107, -55, 15, 86, 140, 163, 145, 89, 5, -87, -163, -204, -194, -134, -34, 83, 189, 255, 261, 200, 80, -72, -220, -326, -358, -300, -156, 47, 263, 437, 520, 476, 297, 7, -337, -657, -865, -883, -655, -168, 549, 1420, 2336, 3174, 3812, 4158, 4158, 3812, 3174, 2336, 1420, 549, -168, -655, -883, -865, -657, -337, 7, 297, 476, 520, 437, 263, 47, -156, -300, -358, -326, -220, -72, 80, 200, 261, 255, 189, 83, -34, -134, -194, -204, -163, -87, 5, 89, 145, 163, 140, 86, 15, -55, -107, -130, -120, -82, -27, 31, 77, 102, 101, 75, 33, -13, -54, -79, -83, -67, -37, 1, 36, 59, 67, 59, 37, 7, -21, -43, -53, -50, -35, -13, 11, 30, 41, 41, 31, 15, -3, -20, -30, -33, -27, -16, -2, 12, 22, 26, 23, 15, 4, -7, -16, -21, -20, -15, -6, 5, 15, 23, 27, 28, 26, 21, 15, 14, 0};
+
+/* 128 */
+//int16_t filter_coeffs[NUMBER_OF_TAPS] = {1,2,2,3,3,1,-2,-5,-7,-6,-2,5,11,14,12,3,-10,-22,-27,-21,-3,20,40,46,32,0,-39,-69,-73,-45,10,71,112,110,57,-32,-123,-175,-156,-64,75,204,264,215,59,-152,-333,-397,-291,-31,297,557,617,404,-53,-610,-1043,-1113,-655,355,1774,3314,4617,5364,5364,4617,3314,1774,355,-655,-1113,-1043,-610,-53,404,617,557,297,-31,-291,-397,-333,-152,59,215,264,204,75,-64,-156,-175,-123,-32,57,110,112,71,10,-45,-73,-69,-39,0,32,46,40,20,-3,-21,-27,-22,-10,3,12,14,11,5,-2,-6,-7,-5,-2,1,3,3,2,2,1};
+
+/* 32 */
+//int16_t filter_coeffs[NUMBER_OF_TAPS] = {271, 403, 558, 602, 466, 124, -369, -877, -1212, -1183, -665, 344, 1701, 3143, 4351, 5040, 5040, 4351, 3143, 1701, 344, -665, -1183, -1212, -877, -369, 124, 466, 602, 558, 403, 271};
 volatile int new_sample_flag = 0;
 static int sample_count = 0;
 int16_t newSampleL = 0;
 int16_t newSampleR = 0;
 int16_t filteredSampleL;
 int16_t filteredSampleR;
-int16_t delayBuffer[DELAY_NUMBER];
 
-// Probably don't need to modify these, they are for audio output
 static volatile int32_t filteredOutBufferA[BUFFER_SIZE];
 static volatile int32_t filteredOutBufferB[BUFFER_SIZE];
 static volatile int bufchoice = 0;
-volatile int bufArdy = 0;
-volatile int bufBrdy = 0;
-volatile int ready = 0;
 
 extern I2S_HandleTypeDef       hAudioOutI2s;
 
 /* Private function prototypes -----------------------------------------------*/
 static void SystemClock_Config(void);
 static void GPIOA_Init(void);
-static int16_t ProcessSample(int16_t newsample);
-static int16_t echoEffect(int16_t newsample);
-static int16_t reverbEffect(int16_t newsample);
+static int16_t ProcessSample(int16_t newsample, int16_t* history);
 /* Private functions ---------------------------------------------------------*/
-
-
-int16_t FixedFilterGet(float, float);
-void FloatFilterInitB(void);
-void FloatFilterInitA(void);
-
-
-
-static int16_t filter_taps_b[3] = {10158, 20283, 10158};
-static int16_t filter_taps_a[2] = {-2261, -10060};
-
-/* let's have our history and output arrays defined somewhere */
-int16_t history_b[31];
-int16_t history_a[31];
-int16_t newdata[NUMBER_OF_TAPS];
-
-
 
 /**
   * @brief  Main program
@@ -126,13 +116,6 @@ int main(void)
   /* Set TIMx instance */
   TimHandle.Instance = TIMx;
 
-
-  /* Initialize the Audio driver */
-  if(BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_AUTO, 60, 8000) != 0) {
-	  Error_Handler();
-  }
-
-
   /* Initialize TIM3 peripheral to toggle with a frequency of ~ 8 kHz
    * System clock is 100 MHz and TIM3 is counting at the rate of the system clock
    * so 100 M / 8 k is 12500
@@ -149,13 +132,12 @@ int main(void)
   }
 
   ITM_Port32(30) = 0;
-#ifndef FUNCTIONAL_TEST
   if(HAL_TIM_Base_Start_IT(&TimHandle) != HAL_OK)
   {
 	  /* Starting Error */
 	  Error_Handler();
   }
-#endif
+
 
   /******************************************************************************
    ******************************************************************************
@@ -175,9 +157,9 @@ int main(void)
 
   while (1) {
 
+
 #ifdef FUNCTIONAL_TEST
-	  new_sample_flag = 1;
-		if (sample_count < AUDIO_SIZE) {
+		if (sample_count < 64000) {
 			  newSampleL = (int16_t)raw_audio[sample_count];
 			  newSampleR = (int16_t)(raw_audio[sample_count] >> 16);
 			  sample_count++;
@@ -186,185 +168,41 @@ int main(void)
 		  }
 #endif
 
-	if (new_sample_flag == 1) {
-		filteredSampleL = ProcessSample(newSampleL); // "L"
-		new_sample_flag = 0;
-
-		/* Attempt at double buffering here: note that we are duplicating the sample for L and R, but this could be changed*/
-		if (bufchoice == 0) {
-			filteredOutBufferA[k] = ((int32_t)filteredSampleL << 16) + (int32_t)newSampleR; // copy the filtered output to both channels
-		} else {
-			filteredOutBufferB[k] = ((int32_t)filteredSampleL << 16) + (int32_t)newSampleR;
-		}
-
-		k++;
-	}
-
-	// once a buffer is full, we can swap to fill up the other buffer
-	if (k == BUFFER_SIZE) {
-		k = 0;
-		if (bufchoice == 0) {
-			bufchoice = 1;
-			bufArdy = 1;
-		} else {
-			bufchoice = 0;
-			bufBrdy = 1;
-		}
-	}
 #ifndef FUNCTIONAL_TEST
+	if (new_sample_flag == 1) {
+#endif
 
-	/* We'll use double buffering here, so that once one buffer is ready to go, we use
-	 * BSP_AUDIO_OUT_ChangeBuffer to tell the DMA to send the audio to the DAC*/
-	if(bufBrdy == 1 && ready == 1 && start == 1) {
-		bufBrdy = 0;
-		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)(filteredOutBufferB), BUFFER_SIZE*2);
-		ready = 0;
-	}
+		filteredSampleL = ProcessSample(newSampleL,history_l); // "L"
+		new_sample_flag = 0;
+		if (i < NUMBER_OF_TAPS-1) {
+			filteredSampleL = 0;
+			i++;
+		} else {
+			if (bufchoice == 0) {
+				filteredOutBufferA[k] = ((int32_t)filteredSampleL << 16) + (int32_t)filteredSampleL; // copy the filtered output to both channels
+			} else {
+				filteredOutBufferB[k] = ((int32_t)filteredSampleL << 16) + (int32_t)filteredSampleL;
+			}
 
-	else if(bufArdy == 1 && ready == 1 && start == 1) {
-		bufArdy = 0;
-		BSP_AUDIO_OUT_ChangeBuffer((uint16_t*)(filteredOutBufferA), BUFFER_SIZE*2);
-		ready = 0;
-	}
+			k++;
+		}
 
-	/* AUDIO_OUT_PLAY is the BSP function essentially tells the audio chip to start working
-	 * so every time the audio DAC receives some new data via DMA /I2S, it will play sound*/
-	if (bufArdy == 1 && bufBrdy == 1 && start == 0) {
-		BSP_AUDIO_OUT_Play((uint16_t*)(filteredOutBufferA), BUFFER_SIZE*2);
-		start = 1;
-		bufArdy = 0;
+#ifndef FUNCTIONAL_TEST
 	}
 #endif
 
+	// once a buffer is full, we can swap to fill up the other buffer
+	// this is probably not going to be used in Lab2
+	if (k == BUFFER_SIZE) {
+		k = 0;
+		bufchoice = bufchoice == 0 ? 1 : 0;
+	}
+
+//    if(UserPressButton == 1) {
+//    	AudioPlay_Test();
+//    	UserPressButton = 0;
+//    }
   }
-
-
-  //IIR FIXED POINT:
-   // ITM_Port32(31) = 1;
-  FixedFilterInitB(); // shifting samples
-  for(int index = 30; index < NUMBER_OF_TAPS; index++)
-      {
-        newdata[index] = FixedFilterGet(raw_audio[index], new_data[index]);
-        FixedFilterInitA();
-      }
-    //ITM_Port32(31) = 2;
-
-}
-
-
-void FloatFilterInitB(void)
-{
-        history_b[30] = raw_audio[0];
-        history_b[29] = raw_audio[1];
-        history_b[28] = raw_audio[2];
-        history_b[27] = raw_audio[3];
-        history_b[26] = raw_audio[4];
-        history_b[25] = raw_audio[5];
-        history_b[24] = raw_audio[6];
-        history_b[23] = raw_audio[7];
-        history_b[22] = raw_audio[8];
-        history_b[21] = raw_audio[9];
-        history_b[20] = raw_audio[10];
-        history_b[19] = raw_audio[11];
-        history_b[18] = raw_audio[12];
-        history_b[17] = raw_audio[13];
-        history_b[16] = raw_audio[14];
-        history_b[15] = raw_audio[15];
-        history_b[14] = raw_audio[16];
-        history_b[13] = raw_audio[17];
-        history_b[12] = raw_audio[18];
-        history_b[11] = raw_audio[19];
-        history_b[10] = raw_audio[20];
-        history_b[9] = raw_audio[21];
-        history_b[8] = raw_audio[22];
-        history_b[7] = raw_audio[23];
-        history_b[6] = raw_audio[24];
-        history_b[5] = raw_audio[25];
-        history_b[4] = raw_audio[26];
-        history_b[3] = raw_audio[27];
-        history_b[2] = raw_audio[28];
-        history_b[1] = raw_audio[29];
-}
-
-void FloatFilterInitA(void)
-{
-        history_a[30] = new_data[0];
-        history_a[29] = new_data[1];
-        history_a[28] = mew_data[2];
-        history_a[27] = new_data[3];
-        history_a[26] = new_data[4];
-        history_a[25] = new_data[5];
-        history_a[24] = new_data[6];
-        history_a[23] = new_data[7];
-        history_a[22] = new_data[8];
-        history_a[21] = new_data[9];
-        history_a[20] = new_data[10];
-        history_a[19] = new_data[11];
-        history_a[18] = new_data[12];
-        history_a[17] = new_data[13];
-        history_a[16] = new_data[14];
-        history_a[15] = new_data[15];
-        history_a[14] = new_data[16];
-        history_a[13] = new_data[17];
-        history_a[12] = new_data[18];
-        history_a[11] = new_data[19];
-        history_a[10] = new_data[20];
-        history_a[9] = new_data[21];
-        history_a[8] = new_data[22];
-        history_a[7] = new_data[23];
-        history_a[6] = new_data[24];
-        history_a[5] = new_data[25];
-        history_a[4] = new_data[26];
-        history_a[3] = new_data[27];
-        history_a[2] = new_data[28];
-        history_a[1] = new_data[29];
-}
-
-
-
-
-
-
-// FIXED:
-int16_t FixedFilterGet (float32_t raw_data, float32 new_data) {
-    // set the new sample as the head
-
-
-    history_b[0] = raw_data;
-    history_a[0] = new_data;
-
-    // set up and do our convolution
-
-    int32_t accumulator = 0;
-    int tap = 0;
-    int16_t temp;
-    int tap2 = 0;
-
-    for (tap = 0; tap < 2; tap++)
-    {
-        accumulator += filter_taps_b[tap]*history_b[tap];
-        //accumulator += filter_taps_fixed[tap]*history[tap];
-        for (tap2 = 0; tap2 < 1; tap2++)
-        {
-            accumulator -= filter_taps_a[tap2]*history_a[tap2];
-        }
-    }
-
-    // shuffle the history along for the next one?
-
-    for(tap = 29; tap > -1; tap--)
-    {
-        history_b[tap+1] = history_b[tap];
-    }
-    
-    for(tap2 = 29; tap2 > -1; tap2--)
-    {
-        history_a[tap2+1] = history_a[tap2];
-    }
-
-    temp = (int16_t)(accumulator >> 15);
-
-    return temp;
 }
 
 /**
@@ -475,14 +313,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	// Otherwise, go to the raw audio in memory and "retrieve" a new sample every timer period
 	// set the new_sample_flag high
-	if (sample_count < AUDIO_SIZE) {
+#ifndef FUNCTIONAL_TEST
+	if (sample_count < 64000) {
 		newSampleL = (int16_t)raw_audio[sample_count];
 		newSampleR = (int16_t)(raw_audio[sample_count] >> 16);
 		sample_count++;
 
-		if (sample_count >= AUDIO_SIZE) sample_count = 0;
+		if (sample_count >= 64000) sample_count = 0;
 		new_sample_flag = 1;
 	}
+  
+#endif
 }
 
 int _write(int file, char* ptr, int len) {
@@ -520,21 +361,34 @@ static void GPIOA_Init(void){
 
 }
 
-static int16_t ProcessSample(int16_t newsample) {
-	return newsample;
-}
+static int16_t ProcessSample(int16_t newsample, int16_t* history) {
 
-static int16_t echoEffect(int16_t newsample) {
-	return newsample;
-}
+	// set the new sample as the head
+	history[0] = newsample;
 
+	// set up and do our convolution
+	int tap = 0;
+	int32_t accumulator = 0;
+	for (tap = 0; tap < NUMBER_OF_TAPS; tap++) {
+		accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[tap];
+	}
 
-static int16_t reverbEffect(int16_t newsample) {
-	return newsample;
-}
+	// shuffle things along for the next one?
+	for(tap = NUMBER_OF_TAPS-2; tap > -1; tap--) {
+		history[tap+1] = history[tap];
+	}
 
-void BSP_AUDIO_OUT_TransferComplete_CallBack() {
-	ready = 1;
+	if (accumulator > 0x3FFFFFFF) {
+		accumulator = 0x3FFFFFFF;
+		overflow_count++;
+	} else if (accumulator < -0x40000000) {
+		accumulator = -0x40000000;
+		underflow_count++;
+	}
+
+	int16_t temp = (int16_t)(accumulator >> 15);
+
+	return temp;
 }
 
 #ifdef USE_FULL_ASSERT
