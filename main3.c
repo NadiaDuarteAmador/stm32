@@ -549,8 +549,13 @@ void ProcessBlock(int16_t* newsamples, int16_t* history, int16_t* results){
 	int tap = 0;
 
 	for (tap = 0; tap < NUMBER_OF_TAPS; tap++) {
-		for(int delay = 0; delay < BLOCK_SIZE; delay++) {
+		for(int delay = 0; delay < BLOCK_SIZE; delay+=BLOCK_SIZE) { // reducing number of loop iterations by a factor of 3
+			//accumulator[delay] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+delay];
 			accumulator[delay] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+delay];
+			accumulator[delay+1] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+delay+1];
+			accumulator[delay+2] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+delay+2];
+	
+			
 		}
 	}
 
