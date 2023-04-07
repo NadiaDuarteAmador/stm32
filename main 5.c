@@ -535,8 +535,6 @@ void ProcessBlock3(int16_t* newsamples, int16_t* history, int16_t* results){
 	}
 
 
-		//size of old history is NUMBER_OF_TAPS
-		//size of new history is NUMBER_OF_TAPS + BLOCK_SIZE - 1
 	for(tap = NUMBER_OF_TAPS-2; tap > -1; tap--) {
 			history[tap+BLOCK_SIZE] = history[tap];
 	}
@@ -575,8 +573,7 @@ void ProcessBlock4(int16_t* newsamples, int16_t* history, int16_t* results){
 		}
 	}
 
-		//size of old history is NUMBER_OF_TAPS
-		//size of new history is NUMBER_OF_TAPS + BLOCK_SIZE - 1
+	
 	for(tap = NUMBER_OF_TAPS-2; tap > -1; tap--) {
 			history[tap+BLOCK_SIZE] = history[tap];
 	}
